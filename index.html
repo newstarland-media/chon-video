@@ -49,75 +49,133 @@
 <script>
 const CFG = window.PICKER_CONFIG || {};
 const SCOPE = "https://www.googleapis.com/auth/drive.file";
+const REDIRECT = location.origin + location.pathname;   // https://newstarland-media.github.io/chon-video/
 const FOLDERS = ["01_Video_Tho", "03_Video_Mau", "04_Tai_Lieu", "05_Giong_Mau", "06_Nhac_Rieng"];
 const LABELS = { "01_Video_Tho":"Video thô", "03_Video_Mau":"Video mẫu", "04_Tai_Lieu":"Tài liệu", "05_Giong_Mau":"Giọng mẫu", "06_Nhac_Rieng":"Nhạc" };
-let token = null, tokenClient = null, gisReady = false, pickerReady = false;
 const btn = document.getElementById("btn"), statusEl = document.getElementById("status");
+let pickerReady = false, wantPicker = false, watchdog = null;
 
 function say(html, cls) { statusEl.className = cls || ""; statusEl.innerHTML = html; }
-function ready() {
-  if (!gisReady || !pickerReady) return;
-  if (!CFG.CLIENT_ID || CFG.CLIENT_ID.startsWith("DIEN_")) { say("Trang chưa được cấu hình (config.js). Báo quản trị viên.", "err"); return; }
-  btn.disabled = false; btn.textContent = "Chọn video / tài liệu";
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+// Lưu tạm token trong tab (tối đa ~55 phút) để "Chọn thêm" không phải đăng nhập lại. Không lưu lâu dài.
+function ss(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { return null; } }
+function getToken() { const t = ss("vs_tok"), exp = +ss("vs_exp") || 0; return t && Date.now() < exp ? t : null; }
+
+// 0) Trình duyệt nhúng trong app (Zalo, Facebook, Messenger, Instagram, TikTok, Line…): Google CHẶN đăng nhập ở đây
+const UA = navigator.userAgent || "";
+const IN_APP = /Zalo|FBAN|FBAV|FB_IAB|Messenger|Instagram|Line\/|TikTok|musical_ly|Bytedance|; wv\)/i.test(UA);
+if (IN_APP) {
+  const isAndroid = /Android/i.test(UA);
+  const url = location.origin + location.pathname;
+  document.querySelector("main").insertAdjacentHTML("afterbegin", `
+    <div class="card" style="border:2px solid #b3261e">
+      <p class="err" style="margin:0 0 8px">⚠️ Bạn đang mở trang trong ứng dụng (Zalo/Facebook…). Google không cho đăng nhập ở đây.</p>
+      ${isAndroid
+        ? `<button class="primary" onclick="location.href='intent://${url.replace(/^https?:\/\//, "")}#Intent;scheme=https;package=com.android.chrome;end'">Mở bằng Chrome</button>`
+        : `<p style="margin:0">Bấm biểu tượng <b>⋯</b> hoặc <b>⋮</b> ở góc trên → <b>Mở bằng trình duyệt</b> (Safari).</p>`}
+      <button class="secondary" onclick="navigator.clipboard && navigator.clipboard.writeText('${url}').then(()=>this.textContent='Đã copy link ✓')">Copy link để dán vào Safari/Chrome</button>
+      <p class="hint" style="margin:8px 0 0">Lần sau mở từ biểu tượng trên màn hình chính (thêm từ Safari/Chrome), không mở qua Zalo.</p>
+    </div>`);
 }
-window.gisLoaded = () => {
-  tokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: CFG.CLIENT_ID, scope: SCOPE,
-    callback: (r) => { if (r.error) { say("Đăng nhập không thành công: " + r.error, "err"); return; } token = r.access_token; openPicker(); }
-  });
-  gisReady = true; ready();
-};
-window.gapiLoaded = () => gapi.load("picker", () => { pickerReady = true; ready(); });
 
-btn.onclick = () => { if (token) openPicker(); else tokenClient.requestAccessToken({ prompt: "" }); };
+// 1) Quay về từ Google: đọc #access_token rồi xoá khỏi thanh địa chỉ
+(function readRedirect() {
+  if (!location.hash || location.hash.length < 2) return;
+  const h = new URLSearchParams(location.hash.slice(1));
+  history.replaceState(null, "", REDIRECT);
+  if (h.get("error")) {
+    say(h.get("error") === "access_denied" ? "Bạn đã bấm Huỷ / không cho phép. Bấm nút để thử lại." :
+        "Google báo lỗi: " + esc(h.get("error")) + ". Báo quản trị viên nếu lặp lại.", "err");
+    return;
+  }
+  if (h.get("access_token")) {
+    if (h.get("state") !== ss("vs_state")) { say("Phiên đăng nhập không khớp, bấm nút để thử lại.", "err"); return; }
+    ss("vs_tok", h.get("access_token"));
+    ss("vs_exp", String(Date.now() + (Math.max(60, (+h.get("expires_in") || 3600) - 300)) * 1000));
+    wantPicker = true;
+    say("Đăng nhập xong. Đang mở trình chọn…");
+  }
+})();
 
-async function findFolders() {
+function login() {
+  const st = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  ss("vs_state", st);
+  say("Đang chuyển sang trang đăng nhập Google…");
+  const q = new URLSearchParams({ client_id: CFG.CLIENT_ID, redirect_uri: REDIRECT, response_type: "token",
+    scope: SCOPE, include_granted_scopes: "true", state: st, prompt: "select_account" });
+  location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + q.toString();
+}
+
+function ready() {
+  if (!CFG.CLIENT_ID || CFG.CLIENT_ID.startsWith("DIEN_")) { say("Trang chưa được cấu hình (config.js). Báo quản trị viên.", "err"); return; }
+  btn.disabled = false; btn.textContent = getToken() ? "Chọn video / tài liệu" : "Đăng nhập Google & chọn video";
+  if (wantPicker) { wantPicker = false; openPicker(); }
+}
+window.gapiLoaded = () => gapi.load("picker", { callback: () => { pickerReady = true; ready(); },
+  onerror: () => say("Không tải được bộ chọn của Google. Kiểm tra mạng rồi tải lại trang.", "err"),
+  timeout: 20000, ontimeout: () => say("Tải bộ chọn của Google quá lâu. Kiểm tra mạng rồi tải lại trang.", "err") });
+window.gapiFailed = () => say("Không tải được thư viện Google (mạng chặn apis.google.com?). Tải lại trang.", "err");
+
+btn.onclick = () => { if (IN_APP) { say("Hãy mở trang bằng Chrome/Safari trước (hướng dẫn ở trên).", "err"); window.scrollTo(0, 0); return; } if (getToken()) openPicker(); else login(); };
+
+async function findFolders(token) {
   const ids = {};
   try {
     const q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false and (" +
       FOLDERS.map(n => `name='${n}'`).join(" or ") + ")");
     const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=50`,
       { headers: { Authorization: "Bearer " + token } });
-    if (r.status === 401) { token = null; return null; }
+    if (r.status === 401) return null;
     const j = await r.json();
     (j.files || []).forEach(f => { if (!ids[f.name]) ids[f.name] = f.id; });
-  } catch (e) { /* vẫn mở được chế độ "Tất cả Drive" */ }
+  } catch (e) { /* vẫn mở được tab "Tất cả Drive" */ }
   return ids;
 }
 
 async function openPicker() {
+  const token = getToken();
+  if (!token) { login(); return; }
+  if (!pickerReady) { wantPicker = true; say("Đang tải bộ chọn của Google…"); return; }
   say("Đang mở trình chọn…");
-  const ids = await findFolders();
-  if (ids === null) { tokenClient.requestAccessToken({ prompt: "" }); return; }
-  const P = google.picker;
-  const b = new P.PickerBuilder()
-    .setAppId(CFG.APP_ID).setOAuthToken(token).setDeveloperKey(CFG.API_KEY)
-    .setLocale("vi").enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
-    .setTitle("Chọn file cho Claude").setCallback(onPicked);
-  FOLDERS.forEach(n => { if (ids[n]) b.addView(new P.DocsView(P.ViewId.DOCS).setParent(ids[n]).setIncludeFolders(true).setLabel(LABELS[n])); });
-  b.addView(new P.DocsView(P.ViewId.DOCS).setIncludeFolders(true).setOwnedByMe(true).setLabel("Tất cả Drive"));
-  const up = new P.DocsUploadView().setIncludeFolders(true);
-  if (ids["01_Video_Tho"]) up.setParent(ids["01_Video_Tho"]);
-  b.addView(up);
-  if (!ids["01_Video_Tho"]) say("Chưa thấy thư mục Claude_Video — hãy gõ <code>kiểm tra drive</code> trong Claude một lần để tạo. Vẫn có thể chọn ở tab Tất cả Drive.", "hint");
-  b.build().setVisible(true);
+  const ids = await findFolders(token);
+  if (ids === null) { ss("vs_tok", null); login(); return; }
+  try {
+    const P = google.picker;
+    const b = new P.PickerBuilder()
+      .setAppId(CFG.APP_ID).setOAuthToken(token).setDeveloperKey(CFG.API_KEY)
+      .setOrigin(location.protocol + "//" + location.host)
+      .setLocale("vi").enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
+      .setTitle("Chọn file cho Claude").setCallback(onPicked);
+    FOLDERS.forEach(n => { if (ids[n]) b.addView(new P.DocsView(P.ViewId.DOCS).setParent(ids[n]).setIncludeFolders(true).setLabel(LABELS[n])); });
+    b.addView(new P.DocsView(P.ViewId.DOCS).setIncludeFolders(true).setOwnedByMe(true).setLabel("Tất cả Drive"));
+    const up = new P.DocsUploadView().setIncludeFolders(true);
+    if (ids["01_Video_Tho"]) up.setParent(ids["01_Video_Tho"]);
+    b.addView(up);
+    b.build().setVisible(true);
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => say("Nếu trình chọn vẫn quay mãi: tải lại trang; trên iPhone tắt <b>Cài đặt → Safari → Chặn tất cả cookie</b>; trên Chrome cho phép cookie bên thứ ba cho trang này.", "hint"), 25000);
+    if (!ids["01_Video_Tho"]) say("Chưa thấy thư mục Claude_Video — gõ <code>kiểm tra drive</code> trong Claude một lần để tạo. Vẫn chọn được ở tab Tất cả Drive.", "hint");
+    else say("Trình chọn đã mở. Tick video rồi bấm <b>Chọn</b>.", "hint");
+  } catch (e) {
+    say("Không mở được trình chọn: " + esc(e.message || e) + ". Tải lại trang rồi thử lại.", "err");
+  }
 }
 
-function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
 function onPicked(data) {
-  const P = google.picker;
-  if (data[P.Response.ACTION] === P.Action.PICKED) {
+  const P = google.picker, act = data[P.Response.ACTION];
+  if (act === "loaded") { clearTimeout(watchdog); return; }
+  clearTimeout(watchdog);
+  if (act === P.Action.PICKED) {
     const docs = data[P.Response.DOCUMENTS] || [];
     const list = docs.map(d => `<li>${esc(d[P.Document.NAME])}</li>`).join("");
     say(`<span class="ok">✓ Đã cho Claude quyền với ${docs.length} file:</span><ul class="files">${list}</ul>
       <p>Quay lại <b>app Claude</b> và gõ, ví dụ: <code>edit video mới nhất</code></p>`);
     btn.textContent = "Chọn thêm file";
-  } else if (data[P.Response.ACTION] === P.Action.CANCEL) {
+  } else if (act === P.Action.CANCEL) {
     say("Đã đóng trình chọn, chưa chọn file nào.", "hint");
   }
 }
 </script>
-<script src="https://accounts.google.com/gsi/client" async defer onload="gisLoaded()"></script>
-<script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
+<script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()" onerror="gapiFailed()"></script>
 </body>
 </html>
