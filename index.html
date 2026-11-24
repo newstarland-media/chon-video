@@ -104,6 +104,8 @@ function getToken() { const t = ss("vs_tok"), exp = +ss("vs_exp") || 0; return t
 // 0) Trình duyệt nhúng trong app (Zalo, Facebook…) — Google chặn đăng nhập ở đây
 const UA = navigator.userAgent || "";
 const IN_APP = /Zalo|FBAN|FBAV|FB_IAB|Messenger|Instagram|Line\/|TikTok|musical_ly|Bytedance|; wv\)/i.test(UA);
+// iPhone/iPad: Safari luôn chặn cookie trong bộ chọn của Google -> ẩn nút đó, chỉ dùng nút gửi file
+const IS_IOS = /iPhone|iPad|iPod/i.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints > 1);
 if (IN_APP) {
   const isAndroid = /Android/i.test(UA);
   $("inapp").innerHTML = `
@@ -166,7 +168,8 @@ async function ensureFolders() {
 
 function showLogin() { $("loginCard").classList.remove("hidden"); $("upCard").classList.add("hidden"); $("extraCard").classList.add("hidden"); }
 async function showApp() {
-  $("loginCard").classList.add("hidden"); $("upCard").classList.remove("hidden"); $("extraCard").classList.remove("hidden");
+  $("loginCard").classList.add("hidden"); $("upCard").classList.remove("hidden");
+  if (!IS_IOS) $("extraCard").classList.remove("hidden");
   try {
     const me = await (await api("drive/v3/about?fields=user")).json();
     $("who").textContent = "Đang dùng: " + ((me.user && me.user.emailAddress) || "");
