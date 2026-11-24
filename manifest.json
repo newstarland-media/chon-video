@@ -1,6 +1,6 @@
 {
-  "name": "Chọn video cho Claude",
-  "short_name": "Chọn video",
+  "name": "Gửi video cho Claude",
+  "short_name": "Gửi video",
   "start_url": "./",
   "scope": "./",
   "display": "browser",

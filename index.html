@@ -3,82 +3,117 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chọn video cho Claude</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23223870'/%3E%3Cpath d='M12 9l12 7-12 7z' fill='%23C9A467'/%3E%3C/svg%3E">
+<title>Gửi video cho Claude</title>
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
 <meta name="theme-color" content="#223870">
 <link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-capable" content="no">
-<meta name="apple-mobile-web-app-title" content="Chọn video">
+<meta name="apple-mobile-web-app-title" content="Gửi video">
 <style>
   :root { --navy:#223870; --gold:#C9A467; --cream:#F7E4B4; --ink:#1d2433; --muted:#5b6478; --bg:#f4f6fb; --card:#fff; --ok:#1f8a4c; --err:#b3261e; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:var(--ink); }
-  header { background:var(--navy); color:#fff; padding:22px 16px 18px; }
+  header { background:var(--navy); color:#fff; padding:20px 16px 16px; }
   header small { color:var(--cream); letter-spacing:.08em; text-transform:uppercase; font-weight:700; font-size:12px; }
   header h1 { margin:6px 0 0; font-size:22px; line-height:1.25; }
+  header .who { margin-top:6px; font-size:13px; color:#d8def0; }
   main { max-width:520px; margin:0 auto; padding:16px; }
   .card { background:var(--card); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(20,30,60,.08); }
-  ol { margin:0; padding-left:20px; line-height:1.6; }
+  label.f { display:block; font-weight:700; margin-bottom:6px; }
+  select { width:100%; font-size:16px; padding:12px; border-radius:10px; border:1px solid #c9d1e6; background:#fff; }
   button { width:100%; border:0; border-radius:12px; padding:16px; font-size:17px; font-weight:700; cursor:pointer; }
   .primary { background:var(--navy); color:#fff; }
+  .gold { background:var(--gold); color:#1d2433; }
   .secondary { background:#e8ecf6; color:var(--navy); margin-top:10px; }
+  .link { background:none; color:var(--navy); text-decoration:underline; font-weight:600; font-size:13px; padding:0; }
   button:disabled { opacity:.5; }
   #status { font-size:15px; line-height:1.5; }
   .ok { color:var(--ok); font-weight:700; }
   .err { color:var(--err); font-weight:700; }
-  ul.files { padding-left:18px; margin:8px 0 0; }
-  code { background:#f3eedc; color:#7a4b00; padding:2px 6px; border-radius:5px; }
   .hint { color:var(--muted); font-size:13px; }
+  code { background:#f3eedc; color:#7a4b00; padding:2px 6px; border-radius:5px; }
+  .item { padding:10px 0; border-top:1px solid #eef1f7; }
+  .item:first-child { border-top:0; }
+  .name { font-size:14px; word-break:break-all; }
+  .bar { height:8px; background:#e8ecf6; border-radius:6px; overflow:hidden; margin-top:6px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--navy); transition:width .2s; }
+  .item.done .bar > i { background:var(--ok); }
+  .item.fail .bar > i { background:var(--err); }
+  .meta { font-size:12px; color:var(--muted); margin-top:4px; }
+  .hidden { display:none; }
 </style>
 <script src="config.js"></script>
 </head>
 <body>
 <header>
   <small>Video Studio · Chế độ an toàn</small>
-  <h1>Chọn video / tài liệu cho Claude</h1>
+  <h1>Gửi video / tài liệu cho Claude</h1>
+  <div class="who" id="who"></div>
 </header>
 <main>
-  <div class="card">
-    <ol>
-      <li>Bấm nút dưới, đăng nhập <b>đúng tài khoản Google</b> đã kết nối với Claude.</li>
-      <li>Chọn video (chọn được nhiều cái) trong thư mục <b>01_Video_Tho</b> — hoặc tab <b>Tải lên</b> để up thẳng từ điện thoại.</li>
-      <li>Bấm <b>Chọn</b>, rồi quay lại app Claude gõ: <code>edit video mới nhất</code></li>
-    </ol>
+  <div id="inapp"></div>
+
+  <div class="card" id="loginCard">
+    <p style="margin-top:0">Đăng nhập <b>đúng tài khoản Google</b> đã kết nối với Claude. Claude chỉ thấy file bạn gửi ở trang này (và file Claude tự tạo) — phần còn lại của Drive Claude không thấy.</p>
+    <button class="primary" id="loginBtn">Đăng nhập Google</button>
   </div>
-  <button class="primary" id="btn" disabled>Đang tải…</button>
-  <div class="card" style="margin-top:14px"><div id="status" class="hint">Claude chỉ thấy những file bạn chọn ở đây (và file Claude tự tạo). Phần còn lại của Drive Claude không thấy.</div></div>
-  <p class="hint" style="text-align:center">Video Studio NSL – công cụ nội bộ Newstarland · <a href="privacy.html">Chính sách quyền riêng tư</a></p>
+
+  <div class="card hidden" id="upCard">
+    <label class="f" for="dest">Gửi vào thư mục</label>
+    <select id="dest">
+      <option value="01_Video_Tho">01 · Video thô (để dựng)</option>
+      <option value="04_Tai_Lieu">04 · Tài liệu (kịch bản, Excel, PDF, ảnh)</option>
+      <option value="03_Video_Mau">03 · Video mẫu (học phong cách)</option>
+      <option value="05_Giong_Mau">05 · Giọng mẫu (ghi âm giọng của bạn)</option>
+      <option value="06_Nhac_Rieng">06 · Nhạc riêng</option>
+    </select>
+    <input type="file" id="file" multiple class="hidden">
+    <button class="gold" id="pickBtn" style="margin-top:12px">Chọn file từ điện thoại &amp; gửi</button>
+    <p class="hint" style="margin:10px 0 0">Giữ màn hình sáng và ở yên trang này tới khi xong. Video 500 MB mất vài phút tuỳ mạng.</p>
+  </div>
+
+  <div class="card hidden" id="listCard"><div id="list"></div></div>
+
+  <div class="card"><div id="status" class="hint">Đang tải…</div></div>
+
+  <div class="card hidden" id="extraCard">
+    <p class="hint" style="margin-top:0">Video đã có sẵn trên Google Drive (up từ app Drive)? Dùng bộ chọn của Google — chạy tốt trên máy tính &amp; Android; <b>trên iPhone thường bị Safari chặn</b>, khi đó hãy gửi lại file bằng nút vàng ở trên.</p>
+    <button class="secondary" id="pickerBtn">Chọn file có sẵn trên Drive</button>
+  </div>
+
+  <p class="hint" style="text-align:center">Video Studio NSL – công cụ nội bộ Newstarland · <a href="privacy.html">Chính sách quyền riêng tư</a> · <button class="link" id="logoutBtn" style="width:auto;display:inline">Đăng xuất</button></p>
 </main>
 <script>
 const CFG = window.PICKER_CONFIG || {};
 const SCOPE = "https://www.googleapis.com/auth/drive.file";
-const REDIRECT = location.origin + location.pathname;   // https://newstarland-media.github.io/chon-video/
-const FOLDERS = ["01_Video_Tho", "03_Video_Mau", "04_Tai_Lieu", "05_Giong_Mau", "06_Nhac_Rieng"];
-const LABELS = { "01_Video_Tho":"Video thô", "03_Video_Mau":"Video mẫu", "04_Tai_Lieu":"Tài liệu", "05_Giong_Mau":"Giọng mẫu", "06_Nhac_Rieng":"Nhạc" };
-const btn = document.getElementById("btn"), statusEl = document.getElementById("status");
-let pickerReady = false, wantPicker = false, watchdog = null;
+const REDIRECT = location.origin + location.pathname;
+const ROOT = "Claude_Video";
+const SUBS = ["01_Video_Tho", "02_Thanh_Pham", "03_Video_Mau", "04_Tai_Lieu", "05_Giong_Mau", "06_Nhac_Rieng"];
+const FOLDER = "application/vnd.google-apps.folder";
+const CHUNK = 16 * 1024 * 1024; // 16 MB (bội số của 256 KB)
+const $ = id => document.getElementById(id);
+const statusEl = $("status");
+let folderIds = null, busy = false, pickerReady = false;
 
 function say(html, cls) { statusEl.className = cls || ""; statusEl.innerHTML = html; }
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
-// Lưu tạm token trong tab (tối đa ~55 phút) để "Chọn thêm" không phải đăng nhập lại. Không lưu lâu dài.
+function mb(n) { return (n / 1048576).toFixed(n > 1e8 ? 0 : 1) + " MB"; }
 function ss(k, v) { try { if (v === undefined) return sessionStorage.getItem(k); if (v === null) sessionStorage.removeItem(k); else sessionStorage.setItem(k, v); } catch (e) { return null; } }
 function getToken() { const t = ss("vs_tok"), exp = +ss("vs_exp") || 0; return t && Date.now() < exp ? t : null; }
 
-// 0) Trình duyệt nhúng trong app (Zalo, Facebook, Messenger, Instagram, TikTok, Line…): Google CHẶN đăng nhập ở đây
+// 0) Trình duyệt nhúng trong app (Zalo, Facebook…) — Google chặn đăng nhập ở đây
 const UA = navigator.userAgent || "";
 const IN_APP = /Zalo|FBAN|FBAV|FB_IAB|Messenger|Instagram|Line\/|TikTok|musical_ly|Bytedance|; wv\)/i.test(UA);
 if (IN_APP) {
   const isAndroid = /Android/i.test(UA);
-  const url = location.origin + location.pathname;
-  document.querySelector("main").insertAdjacentHTML("afterbegin", `
+  $("inapp").innerHTML = `
     <div class="card" style="border:2px solid #b3261e">
       <p class="err" style="margin:0 0 8px">⚠️ Bạn đang mở trang trong ứng dụng (Zalo/Facebook…). Google không cho đăng nhập ở đây.</p>
       ${isAndroid
-        ? `<button class="primary" onclick="location.href='intent://${url.replace(/^https?:\/\//, "")}#Intent;scheme=https;package=com.android.chrome;end'">Mở bằng Chrome</button>`
-        : `<p style="margin:0">Bấm biểu tượng <b>⋯</b> hoặc <b>⋮</b> ở góc trên → <b>Mở bằng trình duyệt</b> (Safari).</p>`}
-      <button class="secondary" onclick="navigator.clipboard && navigator.clipboard.writeText('${url}').then(()=>this.textContent='Đã copy link ✓')">Copy link để dán vào Safari/Chrome</button>
-      <p class="hint" style="margin:8px 0 0">Lần sau mở từ biểu tượng trên màn hình chính (thêm từ Safari/Chrome), không mở qua Zalo.</p>
-    </div>`);
+        ? `<button class="primary" onclick="location.href='intent://${REDIRECT.replace(/^https?:\/\//, "")}#Intent;scheme=https;package=com.android.chrome;end'">Mở bằng Chrome</button>`
+        : `<p style="margin:0">Bấm <b>⋯</b> / <b>⋮</b> ở góc trên → <b>Mở bằng trình duyệt</b> (Safari).</p>`}
+      <button class="secondary" onclick="navigator.clipboard && navigator.clipboard.writeText('${REDIRECT}').then(()=>this.textContent='Đã copy link ✓')">Copy link để dán vào Safari/Chrome</button>
+    </div>`;
 }
 
 // 1) Quay về từ Google: đọc #access_token rồi xoá khỏi thanh địa chỉ
@@ -86,99 +121,150 @@ if (IN_APP) {
   if (!location.hash || location.hash.length < 2) return;
   const h = new URLSearchParams(location.hash.slice(1));
   history.replaceState(null, "", REDIRECT);
-  if (h.get("error")) {
-    say(h.get("error") === "access_denied" ? "Bạn đã bấm Huỷ / không cho phép. Bấm nút để thử lại." :
-        "Google báo lỗi: " + esc(h.get("error")) + ". Báo quản trị viên nếu lặp lại.", "err");
-    return;
-  }
+  if (h.get("error")) { say(h.get("error") === "access_denied" ? "Bạn đã bấm Huỷ / không cho phép. Bấm Đăng nhập để thử lại." : "Google báo lỗi: " + esc(h.get("error")), "err"); return; }
   if (h.get("access_token")) {
-    if (h.get("state") !== ss("vs_state")) { say("Phiên đăng nhập không khớp, bấm nút để thử lại.", "err"); return; }
+    if (h.get("state") !== ss("vs_state")) { say("Phiên đăng nhập không khớp, bấm Đăng nhập để thử lại.", "err"); return; }
     ss("vs_tok", h.get("access_token"));
-    ss("vs_exp", String(Date.now() + (Math.max(60, (+h.get("expires_in") || 3600) - 300)) * 1000));
-    wantPicker = true;
-    say("Đăng nhập xong. Đang mở trình chọn…");
+    ss("vs_exp", String(Date.now() + Math.max(60, (+h.get("expires_in") || 3600) - 300) * 1000));
   }
 })();
 
 function login() {
+  if (IN_APP) { say("Hãy mở trang bằng Safari/Chrome trước (hướng dẫn ở trên).", "err"); scrollTo(0, 0); return; }
   const st = Math.random().toString(36).slice(2) + Date.now().toString(36);
   ss("vs_state", st);
   say("Đang chuyển sang trang đăng nhập Google…");
-  const q = new URLSearchParams({ client_id: CFG.CLIENT_ID, redirect_uri: REDIRECT, response_type: "token",
-    scope: SCOPE, include_granted_scopes: "true", state: st, prompt: "select_account" });
-  location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + q.toString();
+  location.href = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
+    client_id: CFG.CLIENT_ID, redirect_uri: REDIRECT, response_type: "token", scope: SCOPE,
+    include_granted_scopes: "true", state: st, prompt: "select_account" });
+}
+function logout() { ss("vs_tok", null); ss("vs_exp", null); location.replace(REDIRECT); }
+
+async function api(path, opts = {}) {
+  const t = getToken();
+  if (!t) { showLogin(); say("Phiên đăng nhập đã hết hạn — bấm Đăng nhập lại.", "err"); throw new Error("cần đăng nhập lại"); }
+  const r = await fetch("https://www.googleapis.com/" + path, { ...opts, headers: { Authorization: "Bearer " + t, ...(opts.headers || {}) } });
+  if (r.status === 401) { ss("vs_tok", null); showLogin(); say("Phiên đăng nhập đã hết hạn — bấm Đăng nhập lại.", "err"); throw new Error("401"); }
+  return r;
+}
+async function findOrCreate(name, parent) {
+  const q = `name='${name}' and mimeType='${FOLDER}' and trashed=false` + (parent ? ` and '${parent}' in parents` : "");
+  const r = await (await api("drive/v3/files?" + new URLSearchParams({ q, fields: "files(id,name)", pageSize: "10" }))).json();
+  if (r.files && r.files.length) return r.files[0].id;
+  const c = await (await api("drive/v3/files?fields=id", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType: FOLDER, ...(parent ? { parents: [parent] } : {}) }) })).json();
+  if (!c.id) throw new Error("không tạo được thư mục " + name);
+  return c.id;
+}
+async function ensureFolders() {
+  if (folderIds) return folderIds;
+  const root = await findOrCreate(ROOT, null);
+  const ids = { [ROOT]: root };
+  for (const s of SUBS) ids[s] = await findOrCreate(s, root);
+  return (folderIds = ids);
 }
 
-function ready() {
-  if (!CFG.CLIENT_ID || CFG.CLIENT_ID.startsWith("DIEN_")) { say("Trang chưa được cấu hình (config.js). Báo quản trị viên.", "err"); return; }
-  btn.disabled = false; btn.textContent = getToken() ? "Chọn video / tài liệu" : "Đăng nhập Google & chọn video";
-  if (wantPicker) { wantPicker = false; openPicker(); }
-}
-window.gapiLoaded = () => gapi.load("picker", { callback: () => { pickerReady = true; ready(); },
-  onerror: () => say("Không tải được bộ chọn của Google. Kiểm tra mạng rồi tải lại trang.", "err"),
-  timeout: 20000, ontimeout: () => say("Tải bộ chọn của Google quá lâu. Kiểm tra mạng rồi tải lại trang.", "err") });
-window.gapiFailed = () => say("Không tải được thư viện Google (mạng chặn apis.google.com?). Tải lại trang.", "err");
-
-btn.onclick = () => { if (IN_APP) { say("Hãy mở trang bằng Chrome/Safari trước (hướng dẫn ở trên).", "err"); window.scrollTo(0, 0); return; } if (getToken()) openPicker(); else login(); };
-
-async function findFolders(token) {
-  const ids = {};
+function showLogin() { $("loginCard").classList.remove("hidden"); $("upCard").classList.add("hidden"); $("extraCard").classList.add("hidden"); }
+async function showApp() {
+  $("loginCard").classList.add("hidden"); $("upCard").classList.remove("hidden"); $("extraCard").classList.remove("hidden");
   try {
-    const q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false and (" +
-      FOLDERS.map(n => `name='${n}'`).join(" or ") + ")");
-    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=50`,
-      { headers: { Authorization: "Bearer " + token } });
-    if (r.status === 401) return null;
-    const j = await r.json();
-    (j.files || []).forEach(f => { if (!ids[f.name]) ids[f.name] = f.id; });
-  } catch (e) { /* vẫn mở được tab "Tất cả Drive" */ }
-  return ids;
+    const me = await (await api("drive/v3/about?fields=user")).json();
+    $("who").textContent = "Đang dùng: " + ((me.user && me.user.emailAddress) || "");
+    say("Sẵn sàng. Chọn thư mục rồi bấm nút vàng để gửi file.", "hint");
+    ensureFolders().catch(() => {});
+  } catch (e) { /* đã báo */ }
 }
 
+// ---------- Tải lên (resumable, từng khúc 16 MB) ----------
+function addRow(f) {
+  $("listCard").classList.remove("hidden");
+  const d = document.createElement("div"); d.className = "item";
+  d.innerHTML = `<div class="name">${esc(f.name)}</div><div class="bar"><i></i></div><div class="meta">${mb(f.size)} · đang chờ…</div>`;
+  $("list").prepend(d); return d;
+}
+function setRow(row, pct, text, state) {
+  row.querySelector("i").style.width = pct + "%";
+  row.querySelector(".meta").textContent = text;
+  if (state) row.classList.add(state);
+}
+async function uploadOne(file, parentId, row) {
+  const start = await api("upload/drive/v3/files?uploadType=resumable&fields=id,name", {
+    method: "POST",
+    headers: { "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": file.type || "application/octet-stream", "X-Upload-Content-Length": String(file.size) },
+    body: JSON.stringify({ name: file.name, parents: [parentId] }) });
+  if (!start.ok) throw new Error("Google từ chối (" + start.status + ")");
+  const url = start.headers.get("Location");
+  if (!url) throw new Error("không nhận được địa chỉ tải lên");
+  let off = 0; const t0 = Date.now();
+  for (;;) {
+    const end = Math.min(off + CHUNK, file.size);
+    const res = await new Promise((ok, no) => {
+      const x = new XMLHttpRequest();
+      x.open("PUT", url);
+      if (file.size) x.setRequestHeader("Content-Range", `bytes ${off}-${end - 1}/${file.size}`);
+      x.upload.onprogress = e => { const done = off + e.loaded, sp = done / Math.max(1, (Date.now() - t0) / 1000);
+        setRow(row, Math.round(done / Math.max(1, file.size) * 100), `${mb(done)} / ${mb(file.size)} · ${mb(sp)}/s`); };
+      x.onload = () => ok(x); x.onerror = () => no(new Error("mất mạng"));
+      x.send(file.slice(off, end));
+    });
+    if (res.status === 200 || res.status === 201) return JSON.parse(res.responseText);
+    if (res.status !== 308) throw new Error("lỗi " + res.status);
+    const rg = res.getResponseHeader("Range");
+    off = rg ? (+rg.split("-")[1] + 1) : end;
+  }
+}
+async function handleFiles(files) {
+  if (!files.length || busy) return;
+  busy = true; $("pickBtn").disabled = true;
+  const destName = $("dest").value, destLabel = $("dest").selectedOptions[0].text;
+  let okN = 0; const rows = [...files].map(addRow);
+  try {
+    say("Đang chuẩn bị thư mục…");
+    const ids = await ensureFolders();
+    for (let i = 0; i < files.length; i++) {
+      say(`Đang gửi ${i + 1}/${files.length}… <b>Giữ màn hình sáng, đừng rời trang.</b>`);
+      try { await uploadOne(files[i], ids[destName], rows[i]); setRow(rows[i], 100, `${mb(files[i].size)} · ✓ đã gửi`, "done"); okN++; }
+      catch (e) { setRow(rows[i], 100, "✗ " + e.message + " — gửi lại file này", "fail"); }
+    }
+    if (okN === files.length)
+      say(`<span class="ok">✓ Đã gửi ${okN} file vào ${esc(destLabel)}.</span><br>Quay lại <b>app Claude</b> và gõ, ví dụ: <code>edit video mới nhất</code>`);
+    else say(`Đã gửi ${okN}/${files.length} file. File lỗi: kiểm tra mạng rồi gửi lại.`, "err");
+  } catch (e) { say("Không gửi được: " + esc(e.message), "err"); }
+  busy = false; $("pickBtn").disabled = false; $("file").value = "";
+}
+
+// ---------- Bộ chọn Google (phụ — máy tính/Android) ----------
+window.gapiLoaded = () => gapi.load("picker", { callback: () => { pickerReady = true; } });
 async function openPicker() {
-  const token = getToken();
-  if (!token) { login(); return; }
-  if (!pickerReady) { wantPicker = true; say("Đang tải bộ chọn của Google…"); return; }
-  say("Đang mở trình chọn…");
-  const ids = await findFolders(token);
-  if (ids === null) { ss("vs_tok", null); login(); return; }
-  try {
-    const P = google.picker;
-    const b = new P.PickerBuilder()
-      .setAppId(CFG.APP_ID).setOAuthToken(token).setDeveloperKey(CFG.API_KEY)
-      .setOrigin(location.protocol + "//" + location.host)
-      .setLocale("vi").enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
-      .setTitle("Chọn file cho Claude").setCallback(onPicked);
-    FOLDERS.forEach(n => { if (ids[n]) b.addView(new P.DocsView(P.ViewId.DOCS).setParent(ids[n]).setIncludeFolders(true).setLabel(LABELS[n])); });
-    b.addView(new P.DocsView(P.ViewId.DOCS).setIncludeFolders(true).setOwnedByMe(true).setLabel("Tất cả Drive"));
-    const up = new P.DocsUploadView().setIncludeFolders(true);
-    if (ids["01_Video_Tho"]) up.setParent(ids["01_Video_Tho"]);
-    b.addView(up);
-    b.build().setVisible(true);
-    clearTimeout(watchdog);
-    watchdog = setTimeout(() => say("Nếu trình chọn vẫn quay mãi: tải lại trang; trên iPhone tắt <b>Cài đặt → Safari → Chặn tất cả cookie</b>; trên Chrome cho phép cookie bên thứ ba cho trang này.", "hint"), 25000);
-    if (!ids["01_Video_Tho"]) say("Chưa thấy thư mục Claude_Video — gõ <code>kiểm tra drive</code> trong Claude một lần để tạo. Vẫn chọn được ở tab Tất cả Drive.", "hint");
-    else say("Trình chọn đã mở. Tick video rồi bấm <b>Chọn</b>.", "hint");
-  } catch (e) {
-    say("Không mở được trình chọn: " + esc(e.message || e) + ". Tải lại trang rồi thử lại.", "err");
-  }
+  if (!pickerReady) { say("Bộ chọn của Google chưa tải xong, thử lại sau vài giây.", "hint"); return; }
+  const ids = await ensureFolders().catch(() => ({}));
+  const P = google.picker;
+  const b = new P.PickerBuilder().setAppId(CFG.APP_ID).setOAuthToken(getToken()).setDeveloperKey(CFG.API_KEY)
+    .setOrigin(location.protocol + "//" + location.host).setLocale("vi")
+    .enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
+    .setTitle("Chọn file cho Claude").setCallback(d => {
+      if (d[P.Response.ACTION] === P.Action.PICKED) {
+        const docs = d[P.Response.DOCUMENTS] || [];
+        say(`<span class="ok">✓ Đã cho Claude quyền với ${docs.length} file:</span> ${docs.map(x => esc(x[P.Document.NAME])).join(", ")}<br>Quay lại app Claude và gõ: <code>edit video mới nhất</code>`);
+      }
+    });
+  if (ids["01_Video_Tho"]) b.addView(new P.DocsView(P.ViewId.DOCS).setParent(ids["01_Video_Tho"]).setIncludeFolders(true).setLabel("Video thô"));
+  b.addView(new P.DocsView(P.ViewId.DOCS).setIncludeFolders(true).setOwnedByMe(true).setLabel("Tất cả Drive"));
+  b.build().setVisible(true);
 }
 
-function onPicked(data) {
-  const P = google.picker, act = data[P.Response.ACTION];
-  if (act === "loaded") { clearTimeout(watchdog); return; }
-  clearTimeout(watchdog);
-  if (act === P.Action.PICKED) {
-    const docs = data[P.Response.DOCUMENTS] || [];
-    const list = docs.map(d => `<li>${esc(d[P.Document.NAME])}</li>`).join("");
-    say(`<span class="ok">✓ Đã cho Claude quyền với ${docs.length} file:</span><ul class="files">${list}</ul>
-      <p>Quay lại <b>app Claude</b> và gõ, ví dụ: <code>edit video mới nhất</code></p>`);
-    btn.textContent = "Chọn thêm file";
-  } else if (act === P.Action.CANCEL) {
-    say("Đã đóng trình chọn, chưa chọn file nào.", "hint");
-  }
-}
+// ---------- Khởi động ----------
+$("loginBtn").onclick = login;
+$("logoutBtn").onclick = logout;
+$("pickBtn").onclick = () => getToken() ? $("file").click() : (showLogin(), login());
+$("file").onchange = e => handleFiles(e.target.files);
+$("pickerBtn").onclick = () => getToken() ? openPicker() : login();
+window.addEventListener("beforeunload", e => { if (busy) { e.preventDefault(); e.returnValue = ""; } });
+
+if (!CFG.CLIENT_ID || CFG.CLIENT_ID.startsWith("DIEN_")) say("Trang chưa được cấu hình (config.js). Báo quản trị viên.", "err");
+else if (getToken()) showApp();
+else { showLogin(); if (!statusEl.classList.contains("err")) say("Bấm <b>Đăng nhập Google</b> để bắt đầu.", "hint"); }
 </script>
-<script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()" onerror="gapiFailed()"></script>
+<script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
 </body>
 </html>
