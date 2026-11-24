@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chọn video cho Claude</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23223870'/%3E%3Cpath d='M12 9l12 7-12 7z' fill='%23C9A467'/%3E%3C/svg%3E">
+<meta name="theme-color" content="#223870">
+<style>
+  :root { --navy:#223870; --gold:#C9A467; --cream:#F7E4B4; --ink:#1d2433; --muted:#5b6478; --bg:#f4f6fb; --card:#fff; --ok:#1f8a4c; --err:#b3261e; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--navy); color:#fff; padding:22px 16px 18px; }
+  header small { color:var(--cream); letter-spacing:.08em; text-transform:uppercase; font-weight:700; font-size:12px; }
+  header h1 { margin:6px 0 0; font-size:22px; line-height:1.25; }
+  main { max-width:520px; margin:0 auto; padding:16px; }
+  .card { background:var(--card); border-radius:14px; padding:16px; margin-bottom:14px; box-shadow:0 1px 3px rgba(20,30,60,.08); }
+  ol { margin:0; padding-left:20px; line-height:1.6; }
+  button { width:100%; border:0; border-radius:12px; padding:16px; font-size:17px; font-weight:700; cursor:pointer; }
+  .primary { background:var(--navy); color:#fff; }
+  .secondary { background:#e8ecf6; color:var(--navy); margin-top:10px; }
+  button:disabled { opacity:.5; }
+  #status { font-size:15px; line-height:1.5; }
+  .ok { color:var(--ok); font-weight:700; }
+  .err { color:var(--err); font-weight:700; }
+  ul.files { padding-left:18px; margin:8px 0 0; }
+  code { background:#f3eedc; color:#7a4b00; padding:2px 6px; border-radius:5px; }
+  .hint { color:var(--muted); font-size:13px; }
+</style>
+<script src="config.js"></script>
+</head>
+<body>
+<header>
+  <small>Video Studio · Chế độ an toàn</small>
+  <h1>Chọn video / tài liệu cho Claude</h1>
+</header>
+<main>
+  <div class="card">
+    <ol>
+      <li>Bấm nút dưới, đăng nhập <b>đúng tài khoản Google</b> đã kết nối với Claude.</li>
+      <li>Chọn video (chọn được nhiều cái) trong thư mục <b>01_Video_Tho</b> — hoặc tab <b>Tải lên</b> để up thẳng từ điện thoại.</li>
+      <li>Bấm <b>Chọn</b>, rồi quay lại app Claude gõ: <code>edit video mới nhất</code></li>
+    </ol>
+  </div>
+  <button class="primary" id="btn" disabled>Đang tải…</button>
+  <div class="card" style="margin-top:14px"><div id="status" class="hint">Claude chỉ thấy những file bạn chọn ở đây (và file Claude tự tạo). Phần còn lại của Drive Claude không thấy.</div></div>
+  <p class="hint" style="text-align:center">Video Studio NSL – công cụ nội bộ Newstarland · <a href="privacy.html">Chính sách quyền riêng tư</a></p>
+</main>
+<script>
+const CFG = window.PICKER_CONFIG || {};
+const SCOPE = "https://www.googleapis.com/auth/drive.file";
+const FOLDERS = ["01_Video_Tho", "03_Video_Mau", "04_Tai_Lieu", "05_Giong_Mau", "06_Nhac_Rieng"];
+const LABELS = { "01_Video_Tho":"Video thô", "03_Video_Mau":"Video mẫu", "04_Tai_Lieu":"Tài liệu", "05_Giong_Mau":"Giọng mẫu", "06_Nhac_Rieng":"Nhạc" };
+let token = null, tokenClient = null, gisReady = false, pickerReady = false;
+const btn = document.getElementById("btn"), statusEl = document.getElementById("status");
+
+function say(html, cls) { statusEl.className = cls || ""; statusEl.innerHTML = html; }
+function ready() {
+  if (!gisReady || !pickerReady) return;
+  if (!CFG.CLIENT_ID || CFG.CLIENT_ID.startsWith("DIEN_")) { say("Trang chưa được cấu hình (config.js). Báo quản trị viên.", "err"); return; }
+  btn.disabled = false; btn.textContent = "Chọn video / tài liệu";
+}
+window.gisLoaded = () => {
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CFG.CLIENT_ID, scope: SCOPE,
+    callback: (r) => { if (r.error) { say("Đăng nhập không thành công: " + r.error, "err"); return; } token = r.access_token; openPicker(); }
+  });
+  gisReady = true; ready();
+};
+window.gapiLoaded = () => gapi.load("picker", () => { pickerReady = true; ready(); });
+
+btn.onclick = () => { if (token) openPicker(); else tokenClient.requestAccessToken({ prompt: "" }); };
+
+async function findFolders() {
+  const ids = {};
+  try {
+    const q = encodeURIComponent("mimeType='application/vnd.google-apps.folder' and trashed=false and (" +
+      FOLDERS.map(n => `name='${n}'`).join(" or ") + ")");
+    const r = await fetch(`https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=50`,
+      { headers: { Authorization: "Bearer " + token } });
+    if (r.status === 401) { token = null; return null; }
+    const j = await r.json();
+    (j.files || []).forEach(f => { if (!ids[f.name]) ids[f.name] = f.id; });
+  } catch (e) { /* vẫn mở được chế độ "Tất cả Drive" */ }
+  return ids;
+}
+
+async function openPicker() {
+  say("Đang mở trình chọn…");
+  const ids = await findFolders();
+  if (ids === null) { tokenClient.requestAccessToken({ prompt: "" }); return; }
+  const P = google.picker;
+  const b = new P.PickerBuilder()
+    .setAppId(CFG.APP_ID).setOAuthToken(token).setDeveloperKey(CFG.API_KEY)
+    .setLocale("vi").enableFeature(P.Feature.MULTISELECT_ENABLED).enableFeature(P.Feature.SUPPORT_DRIVES)
+    .setTitle("Chọn file cho Claude").setCallback(onPicked);
+  FOLDERS.forEach(n => { if (ids[n]) b.addView(new P.DocsView(P.ViewId.DOCS).setParent(ids[n]).setIncludeFolders(true).setLabel(LABELS[n])); });
+  b.addView(new P.DocsView(P.ViewId.DOCS).setIncludeFolders(true).setOwnedByMe(true).setLabel("Tất cả Drive"));
+  const up = new P.DocsUploadView().setIncludeFolders(true);
+  if (ids["01_Video_Tho"]) up.setParent(ids["01_Video_Tho"]);
+  b.addView(up);
+  if (!ids["01_Video_Tho"]) say("Chưa thấy thư mục Claude_Video — hãy gõ <code>kiểm tra drive</code> trong Claude một lần để tạo. Vẫn có thể chọn ở tab Tất cả Drive.", "hint");
+  b.build().setVisible(true);
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+function onPicked(data) {
+  const P = google.picker;
+  if (data[P.Response.ACTION] === P.Action.PICKED) {
+    const docs = data[P.Response.DOCUMENTS] || [];
+    const list = docs.map(d => `<li>${esc(d[P.Document.NAME])}</li>`).join("");
+    say(`<span class="ok">✓ Đã cho Claude quyền với ${docs.length} file:</span><ul class="files">${list}</ul>
+      <p>Quay lại <b>app Claude</b> và gõ, ví dụ: <code>edit video mới nhất</code></p>`);
+    btn.textContent = "Chọn thêm file";
+  } else if (data[P.Response.ACTION] === P.Action.CANCEL) {
+    say("Đã đóng trình chọn, chưa chọn file nào.", "hint");
+  }
+}
+</script>
+<script src="https://accounts.google.com/gsi/client" async defer onload="gisLoaded()"></script>
+<script src="https://apis.google.com/js/api.js" async defer onload="gapiLoaded()"></script>
+</body>
+</html>
